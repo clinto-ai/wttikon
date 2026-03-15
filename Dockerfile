@@ -14,9 +14,10 @@ COPY postcss.config.js ./
 COPY tsconfig.json ./
 COPY next-env.d.ts ./
 COPY railway.json ./
+COPY .dockerignore ./
 
-# Install dependencies
-RUN npm install
+# Install dependencies (ignore audit for vulnerabilities)
+RUN npm install --legacy-peer-deps
 
 # Generate Prisma client
 RUN npx prisma generate
