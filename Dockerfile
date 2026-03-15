@@ -1,5 +1,5 @@
-# Use Node.js 20 LTS
-FROM node:20-alpine
+# Use Node.js 20
+FROM node:20
 
 # Set working directory
 WORKDIR /app
@@ -16,7 +16,7 @@ COPY next-env.d.ts ./
 COPY railway.json ./
 COPY .dockerignore ./
 
-# Install dependencies (ignore audit for vulnerabilities)
+# Install dependencies
 RUN npm install --legacy-peer-deps
 
 # Generate Prisma client
