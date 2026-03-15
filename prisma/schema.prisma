@@ -1,0 +1,336 @@
+// Prisma schema for Wettikon - Bundesliga Betting Analysis App
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== USER & AUTH ====================
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  username     String    @unique
+  passwordHash String
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  
+  // Relations
+  bets         Bet[]
+  sessions     Session[]
+  watchlist    Watchlist[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ==================== TEAMS ====================
+
+model Team {
+  id           String   @id @default(cuid())
+  externalId   Int?     @unique
+  name         String
+  shortName    String?
+  logo         String?
+  venue        String?
+  country      String   @default("Germany")
+  league       String   @default("Bundesliga")
+  
+  // Relations
+  homeMatches  Match[]  @relation("HomeTeam")
+  awayMatches  Match[]  @relation("AwayTeam")
+  standings    StandingsSnapshot[]
+  eloRatings   EloRating[]
+}
+
+// ==================== MATCHES ====================
+
+model Match {
+  id            String    @id @default(cuid())
+  externalId    Int?      @unique
+  league        String    @default("Bundesliga")
+  season        String?
+  matchday      Int?
+  kickoff       DateTime
+  status        String    @default("SCHEDULED") // SCHEDULED, LIVE, HALFTIME, FINISHED, POSTPONED, CANCELLED
+  minute        Int?
+  
+  homeTeamId    String
+  awayTeamId    String
+  homeTeam      Team      @relation("HomeTeam", fields: [homeTeamId], references: [id])
+  awayTeam      Team      @relation("AwayTeam", fields: [awayTeamId], references: [id])
+  
+  homeScore     Int?
+  awayScore     Int?
+  halfTimeHome  Int?
+  halfTimeAway  Int?
+  
+  // Live match events
+  events        MatchEvent[]
+  
+  // Odds and Predictions
+  odds          Odds[]
+  predictions   Prediction[]
+  
+  // User bets on this match
+  bets          Bet[]      @relation("MatchBets")
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model MatchEvent {
+  id        String   @id @default(cuid())
+  matchId   String
+  match     Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  
+  type      String   // GOAL, YELLOW_CARD, RED_CARD, SUBSTITUTION, PENALTY, OWN_GOAL
+  minute    Int
+  extraMin  Int?
+  
+  teamId    String?  // Which team
+  playerId  String?
+  playerName String?
+  
+  scoreHome Int?
+  scoreAway Int?
+  
+  createdAt DateTime @default(now())
+}
+
+// ==================== STANDINGS ====================
+
+model StandingsSnapshot {
+  id          String   @id @default(cuid())
+  
+  teamId      String
+  team        Team     @relation(fields: [teamId], references: [id])
+  
+  league      String   @default("Bundesliga")
+  season      String
+  matchday    Int
+  
+  position    Int
+  played      Int      @default(0)
+  won         Int      @default(0)
+  drawn       Int      @default(0)
+  lost        Int      @default(0)
+  goalsFor    Int      @default(0)
+  goalsAgainst Int     @default(0)
+  goalDiff    Int      @default(0)
+  points      Int      @default(0)
+  
+  form        String?  // WDLWW format
+  homePlayed  Int      @default(0)
+  homeWon     Int      @default(0)
+  homeDrawn   Int      @default(0)
+  homeLost    Int      @default(0)
+  homeGoalsFor Int     @default(0)
+  homeGoalsAgainst Int @default(0)
+  
+  awayPlayed  Int      @default(0)
+  awayWon      Int      @default(0)
+  awayDrawn    Int      @default(0)
+  awayLost     Int      @default(0)
+  awayGoalsFor Int      @default(0)
+  awayGoalsAgainst Int  @default(0)
+  
+  createdAt   DateTime @default(now())
+  
+  @@unique([teamId, season, matchday])
+}
+
+// ==================== ELO RATINGS ====================
+
+model EloRating {
+  id          String   @id @default(cuid())
+  
+  teamId      String
+  team        Team     @relation(fields: [teamId], references: [id])
+  
+  rating      Float    @default(1500)
+  homeRating  Float    @default(1500)
+  awayRating  Float    @default(1500)
+  
+  season      String
+  matchday    Int?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ==================== BOOKMAKERS & ODDS ====================
+
+model Bookmaker {
+  id           String   @id @default(cuid())
+  name         String   @unique
+  logo         String?
+  isActive     Boolean  @default(true)
+  
+  odds         Odds[]
+}
+
+model Market {
+  id           String   @id @default(cuid())
+  name         String   @unique // 1X2, OVER_UNDER, BTTS, ASIAN_HANDICAP, etc.
+  description  String?
+  
+  odds         Odds[]
+  predictions  Prediction[]
+}
+
+model Odds {
+  id            String     @id @default(cuid())
+  
+  matchId       String
+  match         Match      @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  
+  bookmakerId   String
+  bookmaker     Bookmaker  @relation(fields: [bookmakerId], references: [id])
+  
+  marketId      String
+  market        Market     @relation(fields: [marketId], references: [id])
+  
+  selection     String     // Home, Draw, Away, Over2.5, Under2.5, Yes, No, etc.
+  odd           Float
+  
+  createdAt     DateTime   @default(now())
+  
+  @@unique([matchId, bookmakerId, marketId, selection])
+}
+
+// ==================== PREDICTIONS ====================
+
+model Prediction {
+  id            String   @id @default(cuid())
+  
+  matchId       String
+  match         Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  
+  marketId      String
+  market        Market   @relation(fields: [marketId], references: [id])
+  
+  selection     String   // Home, Draw, Away, Over2.5, Under2.5, Yes, No
+  
+  // Prediction data
+  predictedProb Float    // Our calculated probability (0-1)
+  fairOdd       Float    // Fair odds (1/prob)
+  confidence    Float    // Model confidence (0-1)
+  valuePercent  Float?   // Value vs bookmaker odds
+  
+  // Model info
+  modelVersion  String   @default("v1")
+  modelType     String   @default("ensemble") // logistic, random_forest, poisson, elo, ensemble
+  
+  // Key factors
+  factors       String?   // Array of key factors (stored as JSON string)
+  
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  @@unique([matchId, marketId, selection])
+}
+
+// ==================== BETTING ====================
+
+model Bet {
+  id            String    @id @default(cuid())
+  
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  matchId       String?
+  match         Match?    @relation("MatchBets", fields: [matchId], references: [id])
+  
+  // Bet details
+  bookmaker     String
+  marketType    String    // 1X2, OVER_UNDER, BTTS
+  selection     String    // Home, Draw, Away, Over2.5, etc.
+  odd           Float
+  stake         Float
+  
+  // Result
+  status        String    @default("OPEN") // OPEN, WON, LOST, VOID, HALF_WON, HALF_LOST
+  result        String?   // Actual outcome
+  profit        Float?    // Net profit/loss
+  
+  notes          String?
+  createdAt     DateTime  @default(now())
+  settledAt     DateTime?
+  
+  // For quick lookup
+  homeTeam      String?   // Denormalized for display
+  awayTeam      String?
+  kickoff       DateTime?
+}
+
+// ==================== WATCHLIST ====================
+
+model Watchlist {
+  id          String   @id @default(cuid())
+  
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  matchId     String?
+  teamId      String?
+  
+  note        String?
+  createdAt   DateTime @default(now())
+}
+
+// ==================== USER STATS ====================
+
+model UserStats {
+  id            String   @id @default(cuid())
+  
+  userId        String   @unique
+  
+  // Totals
+  totalBets     Int      @default(0)
+  totalStake    Float    @default(0)
+  totalProfit   Float    @default(0)
+  
+  // By status
+  wonBets       Int      @default(0)
+  lostBets      Int      @default(0)
+  voidBets      Int      @default(0)
+  
+  // Calculated
+  roi           Float    @default(0)      // Return on Investment
+  yield         Float    @default(0)     // Net profit / total staked
+  hitRate       Float    @default(0)      // Won / Total
+  
+  avgOdd        Float    @default(0)
+  avgStake      Float    @default(0)
+  
+  // Streaks
+  currentStreak Int      @default(0)
+  bestStreak    Int      @default(0)
+  
+  // By market
+  marketStats   String?   // { "1X2": { bets: 10, won: 6, profit: 50 }, ... }
+  
+  lastUpdated   DateTime @updatedAt
+}
+
+// ==================== SETTINGS ====================
+
+model Settings {
+  id            String   @id @default(cuid())
+  key           String   @unique
+  value         String
+  updatedAt     DateTime @updatedAt
+}
